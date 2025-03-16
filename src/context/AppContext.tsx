@@ -16,7 +16,7 @@ import {
 } from '../utils/supabase';
 
 // FastAPI backend URL
-const FASTAPI_BASE_URL = 'http://82.25.104.223';
+const FASTAPI_BASE_URL = 'https://api.dwoscloud.shop';
 
 interface AppContextProps {
   currentUser: User | null;
