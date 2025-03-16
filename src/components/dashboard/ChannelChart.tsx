@@ -46,46 +46,78 @@ const ChannelChart: React.FC = () => {
   // Function to fetch data from FastAPI
   const fetchDataFromApi = async () => {
     if (!selectedChannel) return;
-    
+
     setApiDataLoading(true);
     setApiError(null);
-    
+
     try {
-      // Get data for each field from the FastAPI backend
-      const allFieldsData: DataPoint[] = [];
-      
-      for (const field of selectedChannel.fields) {
-        const fieldIndex = field.fieldNumber;
-        
-        console.log(`Fetching data for field ${fieldIndex} from: ${FASTAPI_BASE_URL}/channels/${selectedChannel.id}/fields/${fieldIndex}/data`);
-        
-        const response = await fetch(`${FASTAPI_BASE_URL}/api/v1/channels/${selectedChannel.id}/fields/${fieldIndex}/data?results=50`);
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch data for field ${fieldIndex}: ${response.statusText}`);
-        }
-        
-        const fieldData = await response.json();
-        
-        // Convert the data to our DataPoint format
-        const convertedData = fieldData.map((point: any) => ({
-          id: `${selectedChannel.id}-${field.id}-${point.timestamp}`,
-          channelId: selectedChannel.id,
-          fieldId: field.id,
-          value: point.value,
-          timestamp: point.timestamp,
-        }));
-        
-        allFieldsData.push(...convertedData);
-        
-        // Also store in Supabase for persistence
-        await storeDataInSupabase(convertedData);
+      // Make a direct fetch to the FastAPI backend
+      const response = await fetch(`${FASTAPI_BASE_URL}/api/v1/channels/${selectedChannel.id}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch channel data: ${response.statusText}`);
       }
-      
+
+      const channelData = await response.json();
+      console.log("Fetched channel data:", channelData);
+
+      // Extract field data from the response
+      const allFieldsData: DataPoint[] = [];
+
+      // Process fields from the response
+      if (channelData.fields) {
+        Object.entries(channelData.fields).forEach(([fieldKey, fieldValue]: [string, any]) => {
+          const fieldId = selectedChannel.fields.find(f => f.fieldNumber === parseInt(fieldKey))?.id;
+
+          if (fieldId) {
+            // Create a data point for each field
+            const dataPoint: DataPoint = {
+              id: `${selectedChannel.id}-${fieldId}-${fieldValue.last_updated}`,
+              channelId: selectedChannel.id,
+              fieldId: fieldId,
+              value: fieldValue.value,
+              timestamp: fieldValue.last_updated,
+            };
+
+            allFieldsData.push(dataPoint);
+          }
+        });
+      }
+
+      // If we're getting historical data, also try to fetch it for each field
+      if (selectedChannel.fields.length > 0) {
+        for (const field of selectedChannel.fields) {
+          try {
+            // Try to get historical data if available - direct fetch to FastAPI
+            const historyResponse = await fetch(`${FASTAPI_BASE_URL}/api/v1/channels/${selectedChannel.id}/fields/${field.fieldNumber}/data?results=50`);
+
+            if (historyResponse.ok) {
+              const historyData = await historyResponse.json();
+
+              // Convert the data to our DataPoint format
+              const convertedData = historyData.map((point: any) => ({
+                id: `${selectedChannel.id}-${field.id}-${point.timestamp}`,
+                channelId: selectedChannel.id,
+                fieldId: field.id,
+                value: point.value,
+                timestamp: point.timestamp,
+              }));
+
+              allFieldsData.push(...convertedData);
+            }
+          } catch (error) {
+            console.warn(`Could not fetch history for field ${field.fieldNumber}:`, error);
+            // Continue with other fields even if one fails
+          }
+        }
+      }
+
+      console.log("Processed API data:", allFieldsData);
       setApiData(allFieldsData);
-      
-      // If we have data from the API, use it for the chart
+
+      // Store in Supabase for persistence
       if (allFieldsData.length > 0) {
+        await storeDataInSupabase(allFieldsData);
         setDataPoints(allFieldsData);
       }
     } catch (err) {
@@ -99,7 +131,7 @@ const ChannelChart: React.FC = () => {
   // Function to store data in Supabase
   const storeDataInSupabase = async (dataToStore: DataPoint[]) => {
     if (!dataToStore.length) return;
-    
+
     try {
       // Insert data points to Supabase datapoints table
       const { error } = await supabase
@@ -111,7 +143,7 @@ const ChannelChart: React.FC = () => {
           value: point.value,
           timestamp: point.timestamp,
         })));
-      
+
       if (error) {
         console.error('Error storing data in Supabase:', error);
       }
@@ -204,7 +236,7 @@ const ChannelChart: React.FC = () => {
   let chartData;
   if (selectedChannel && dataPoints && !isLoading) {
     // Use combined data from API and local
-    const combinedData = [...dataPoints, ...apiData].filter((v, i, a) => 
+    const combinedData = [...dataPoints, ...apiData].filter((v, i, a) =>
       a.findIndex(t => t.id === v.id) === i
     );
     chartData = prepareChartData(combinedData, selectedChannel.fields, selectedTimeRange);
@@ -247,7 +279,7 @@ const ChannelChart: React.FC = () => {
       <div className="flex-1 relative" ref={chartContainerRef} style={{ minHeight: "400px" }}>
         <AnimatePresence mode="wait">
           {isLoading || apiDataLoading ? (
-            <motion.div 
+            <motion.div
               key="loading"
               className="absolute inset-0 flex items-center justify-center"
               initial={{ opacity: 0 }}
@@ -258,7 +290,7 @@ const ChannelChart: React.FC = () => {
               <Loader size="lg" color="coffee" />
             </motion.div>
           ) : !selectedChannel ? (
-            <motion.div 
+            <motion.div
               key="no-channel"
               className="absolute inset-0 flex items-center justify-center text-coffee-500"
               initial={{ opacity: 0 }}
@@ -269,7 +301,7 @@ const ChannelChart: React.FC = () => {
               Please select a channel to view data
             </motion.div>
           ) : dataPoints.length === 0 && apiData.length === 0 ? (
-            <motion.div 
+            <motion.div
               key="no-data"
               className="absolute inset-0 flex flex-col items-center justify-center text-coffee-500"
               initial={{ opacity: 0 }}

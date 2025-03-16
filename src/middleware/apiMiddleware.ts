@@ -58,9 +58,16 @@ export function setupFetchInterceptor() {
   
   window.fetch = async function(input: RequestInfo | URL, init?: RequestInit) {
     const inputUrl = typeof input === 'string' ? input : input.url;
+    
+    // Check if this URL is already a direct call to the FastAPI backend
+    if (inputUrl.startsWith(FASTAPI_BASE_URL)) {
+      // Don't intercept direct calls to the FastAPI server
+      return originalFetch.apply(window, [input, init]);
+    }
+    
     const url = new URL(inputUrl, window.location.origin);
     
-    // Only intercept API requests
+    // Only intercept API requests to our own backend
     if (url.pathname.startsWith('/api/')) {
       try {
         console.log('Intercepting API request:', url.toString());

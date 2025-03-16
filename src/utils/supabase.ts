@@ -35,7 +35,7 @@ export const generateApiKey = (): string => {
 };
 
 // Function to check if string is a valid UUID
-const isValidUuid = (id: string): boolean => {
+export const isValidUuid = (id: string): boolean => {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(id);
 }
@@ -78,6 +78,8 @@ export const dbToChannel = (item: any): Channel => {
 export const channelToDb = (channel: Partial<Channel>): any => {
   const dbObj: any = {};
   
+  // Include ID when provided (this was missing before)
+  if (channel.id !== undefined) dbObj.id = channel.id;
   if (channel.name !== undefined) dbObj.name = channel.name;
   if (channel.description !== undefined) dbObj.description = channel.description;
   if (channel.userId !== undefined) dbObj.user_id = channel.userId;
@@ -127,7 +129,7 @@ export const regenerateApiKey = async (channelId: string): Promise<{ apiKey: str
 };
 
 // Function to create a channel
-export const createChannel = async (channel: Omit<Channel, 'id' | 'createdAt' | 'updatedAt'>) => {
+export const createChannel = async (channel: Omit<Channel, 'createdAt' | 'updatedAt'>) => {
   // Ensure channel has an API key
   const apiKey = channel.apiKey || generateApiKey();
   
@@ -136,6 +138,8 @@ export const createChannel = async (channel: Omit<Channel, 'id' | 'createdAt' | 
     const dbChannel = channelToDb(channel);
     dbChannel.api_key = apiKey;
     
+    console.log('Creating channel in Supabase with ID:', channel.id);
+    
     const { data, error } = await supabase
       .from('channels')
       .insert([dbChannel])
@@ -143,8 +147,11 @@ export const createChannel = async (channel: Omit<Channel, 'id' | 'createdAt' | 
       .single();
     
     if (error) {
+      console.error('Error in Supabase channel creation:', error);
       throw error;
     }
+    
+    console.log('Channel created in Supabase:', data);
     
     // Convert from DB format to our application format
     const createdChannel = dbToChannel(data);
@@ -363,4 +370,4 @@ export const updateUserProfile = async (userId: string, updates: Partial<User>) 
   }
 };
 
-export { isValidUuid }
+// Removed the duplicate export at the end of the file

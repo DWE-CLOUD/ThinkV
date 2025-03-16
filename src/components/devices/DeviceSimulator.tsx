@@ -172,7 +172,7 @@ const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ channel }) => {
         <div className="bg-beige-100 p-3 rounded-md text-sm text-coffee-700">
           <p>
             This simulator will send random data to your channel every {interval / 1000} seconds with {variation}% variation.
-            Data will be sent directly to the FastAPI backend at http://82.25.104.223.
+            Data will be sent directly to the FastAPI backend.
           </p>
         </div>
       </div>

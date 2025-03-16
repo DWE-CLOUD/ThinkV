@@ -4,7 +4,7 @@ type SimulateOptions = {
   channelId: string;
   apiKey: string;
   interval: number; // in milliseconds
-  fields: { id: string; name: string }[];
+  fields: { id: string; name: string; fieldNumber: number }[];
   randomize?: boolean;
   baseValues?: Record<string, number>;
   variation?: number; // percentage of variation, e.g. 10 for ±10%
@@ -27,8 +27,8 @@ export class DeviceSimulator {
     
     // Set default base values if not provided
     this.baseValues = options.baseValues || {};
-    options.fields.forEach((field, index) => {
-      const fieldIndex = index + 1;
+    options.fields.forEach((field) => {
+      const fieldIndex = field.fieldNumber;
       if (this.baseValues[`field${fieldIndex}`] === undefined) {
         // Generate some reasonable defaults based on field name
         const name = field.name.toLowerCase();
@@ -51,7 +51,7 @@ export class DeviceSimulator {
       this.options.variation = 5;
     }
 
-    // Set the API URL to use the FastAPI backend
+    // Set the API URL to use the FastAPI backend - updated to new format
     this.apiUrl = `${FASTAPI_BASE_URL}/update`;
   }
 
@@ -80,8 +80,8 @@ export class DeviceSimulator {
   private generateData(): Record<string, number> {
     const data: Record<string, number> = {};
     
-    this.options.fields.forEach((field, index) => {
-      const fieldIndex = index + 1;
+    this.options.fields.forEach(field => {
+      const fieldIndex = field.fieldNumber;
       const baseValue = this.baseValues[`field${fieldIndex}`] || 0;
       
       let value: number;
@@ -112,7 +112,7 @@ export class DeviceSimulator {
     try {
       console.log(`Sending data to FastAPI: ${this.apiUrl}`);
       
-      // Construct URL with parameters
+      // Construct URL with parameters for the GET request
       const params = new URLSearchParams({
         channel_id: this.options.channelId,
         api_key: this.options.apiKey,

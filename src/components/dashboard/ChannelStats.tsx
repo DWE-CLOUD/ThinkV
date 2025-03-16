@@ -28,7 +28,7 @@ const ChannelStats: React.FC = () => {
     setApiError(null);
     
     try {
-      // Get the channel data from the API
+      // Make a direct fetch to the FastAPI backend
       const response = await fetch(`${FASTAPI_BASE_URL}/api/v1/channels/${selectedChannel.id}`);
       
       if (!response.ok) {
@@ -36,21 +36,27 @@ const ChannelStats: React.FC = () => {
       }
       
       const channelData = await response.json();
+      console.log("Channel data for stats:", channelData);
       
-      // Extract field values
+      // Extract field values from the channel data
       const stats: Record<string, any> = {};
       
-      // Map FastAPI field values to our format
-      Object.entries(channelData.fields || {}).forEach(([fieldIndex, fieldData]: [string, any]) => {
-        const field = selectedChannel.fields.find(f => f.fieldNumber === parseInt(fieldIndex));
-        if (field) {
-          stats[field.id] = {
-            current: fieldData.value,
-            lastUpdated: fieldData.last_updated
-          };
-        }
-      });
+      // Process fields from the response
+      if (channelData.fields) {
+        Object.entries(channelData.fields).forEach(([fieldKey, fieldValue]: [string, any]) => {
+          const fieldNumber = parseInt(fieldKey);
+          const field = selectedChannel.fields.find(f => f.fieldNumber === fieldNumber);
+          
+          if (field) {
+            stats[field.id] = {
+              current: fieldValue.value,
+              lastUpdated: fieldValue.last_updated
+            };
+          }
+        });
+      }
       
+      console.log("Processed stats:", stats);
       setApiStats(stats);
     } catch (err) {
       console.error('Error fetching API stats:', err);
@@ -244,7 +250,6 @@ const ChannelStats: React.FC = () => {
                   {/* Mini sparkline visualization */}
                   <div className="mt-3 h-6 flex items-end space-x-0.5">
                     {[...Array(15)].map((_, i) => {
-                      // Generate a deterministic but varied pattern
                       const height = 30 + Math.sin((i + parseInt(field.id.replace(/\D/g, ''))) * 0.5) * 30;
                       return (
                         <motion.div 

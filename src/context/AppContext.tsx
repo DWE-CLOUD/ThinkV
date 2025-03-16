@@ -338,6 +338,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const apiKeyFromServer = fastApiChannel.api_key;
         const channelIdFromServer = fastApiChannel.id;
 
+        console.log(`Using FastAPI channel ID: ${channelIdFromServer} and API key: ${apiKeyFromServer}`);
+
         // Now create in Supabase with the same ID and API key from FastAPI
         const { channel: newChannel, error } = await createChannelApi({
           ...channelData,
@@ -359,7 +361,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             createdAt: fastApiChannel.created_at,
             updatedAt: fastApiChannel.created_at,
             apiKey: apiKeyFromServer,
-            fields: Object.entries(fastApiChannel.fields).map(([fieldId, fieldData]: [string, any]) => ({
+            fields: Object.entries(fastApiChannel.fields || {}).map(([fieldId, fieldData]: [string, any]) => ({
               id: fieldData.field_id.toString(),
               name: fieldData.name,
               fieldNumber: parseInt(fieldId),
