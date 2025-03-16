@@ -242,7 +242,7 @@ const ChannelDetails: React.FC = () => {
                   <div className="bg-coffee-800 text-beige-100 p-4 rounded-md overflow-x-auto">
                     <pre className="text-sm">
 {`# Using curl to send data
-curl -X POST "${window.location.origin}/api/v1/channels/${selectedChannel.id}/data" \\
+curl -X POST "https://api.dwoscloud.shop/api/v1/channels/${selectedChannel.id}" \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: ${selectedChannel.apiKey || 'YOUR_API_KEY'}" \\
   -d '{
@@ -260,7 +260,7 @@ curl -X POST "${window.location.origin}/api/v1/channels/${selectedChannel.id}/da
                     <pre className="text-sm">
 {`// Using fetch API
 const apiKey = "${selectedChannel.apiKey || 'YOUR_API_KEY'}";
-const url = "${window.location.origin}/api/v1/channels/${selectedChannel.id}/data";
+const url = "https://api.dwoscloud.shop/api/v1/channels/${selectedChannel.id}/data";
 
 fetch(url, {
   method: 'POST',

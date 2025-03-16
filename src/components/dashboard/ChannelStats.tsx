@@ -7,7 +7,7 @@ import Loader from '../ui/Loader';
 import { TrendingUp, TrendingDown, AlertTriangle, RefreshCw } from 'lucide-react';
 
 // FastAPI backend URL
-const FASTAPI_BASE_URL = 'http://82.25.104.223';
+const FASTAPI_BASE_URL = 'https://api.dwoscloud.shop';
 
 const ChannelStats: React.FC = () => {
   const { selectedChannel, dataPoints, isLoading } = useAppContext();

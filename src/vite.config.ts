@@ -11,7 +11,7 @@ export default defineConfig({
     proxy: {
       // Proxy API requests to FastAPI backend
       '/api': {
-        target: 'http://82.25.104.223',
+        target: 'https://api.dwoscloud.shop',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,

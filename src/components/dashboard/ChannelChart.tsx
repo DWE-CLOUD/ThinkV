@@ -22,7 +22,7 @@ import { supabase } from '../../utils/supabase';
 import { DataPoint } from '../../types';
 
 // FastAPI backend URL
-const FASTAPI_BASE_URL = 'http://82.25.104.223';
+const FASTAPI_BASE_URL = 'https://api.dwoscloud.shop';
 
 // Register ChartJS components
 ChartJS.register(

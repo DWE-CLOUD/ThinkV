@@ -1,7 +1,7 @@
 // This middleware intercepts API requests and redirects them to the FastAPI backend
 
 // The base URL for the FastAPI backend
-const FASTAPI_BASE_URL = 'http://82.25.104.223';
+const FASTAPI_BASE_URL = 'https://api.dwoscloud.shop';
 
 // This function redirects API requests to the FastAPI backend
 export async function handleApiRequest(endpoint: string, method: string, headers: Record<string, string>, body?: any) {
