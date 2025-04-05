@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useParams } from 'react-router-dom';
-import { Share2, Settings, Download, Link, Copy, ExternalLink, Code, Key, RefreshCw, Info } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Settings, Download, Link as LinkIcon, Copy, ExternalLink, Code, Key, RefreshCw, Info, Trash2 } from 'lucide-react';
 import Header from '../components/layout/Header';
 import { useAppContext } from '../context/AppContext';
 import Card from '../components/ui/Card';
@@ -9,14 +9,18 @@ import ChannelChart from '../components/dashboard/ChannelChart';
 import ChannelStats from '../components/dashboard/ChannelStats';
 import TimeRangeSelector from '../components/dashboard/TimeRangeSelector';
 import Button from '../components/ui/Button';
+import ConfirmDeleteModal from '../components/channels/ConfirmDeleteModal';
 
 const ChannelDashboard: React.FC = () => {
   const { channelId } = useParams<{ channelId: string }>();
-  const { channels, setSelectedChannel, selectedChannel, refreshData } = useAppContext();
+  const navigate = useNavigate();
+  const { channels, setSelectedChannel, selectedChannel, refreshData, deleteChannel } = useAppContext();
   
   const [apiKeyCopied, setApiKeyCopied] = useState(false);
   const [webhookUrlCopied, setWebhookUrlCopied] = useState(false);
   const [showApiCode, setShowApiCode] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
 
   // Find the channel based on the ID parameter
   useEffect(() => {
@@ -27,6 +31,25 @@ const ChannelDashboard: React.FC = () => {
       }
     }
   }, [channelId, channels, setSelectedChannel]);
+
+  const handleDelete = async () => {
+    if (!channelId) return;
+    
+    setDeleteInProgress(true);
+    
+    try {
+      const success = await deleteChannel(channelId);
+      if (success) {
+        navigate('/dashboard');
+      } else {
+        setIsDeleteModalOpen(false);
+      }
+    } catch (error) {
+      console.error("Error deleting channel:", error);
+    } finally {
+      setDeleteInProgress(false);
+    }
+  };
 
   if (!selectedChannel) {
     return (
@@ -50,14 +73,13 @@ const ChannelDashboard: React.FC = () => {
     }
   };
 
+  const webhookUrl = `https://api.thinkv.space/channels/${selectedChannel.id}`;
+
   const copyWebhookUrl = () => {
-    const webhookUrl = `${window.location.origin}/api/channels/${selectedChannel.id}/data`;
     navigator.clipboard.writeText(webhookUrl);
     setWebhookUrlCopied(true);
     setTimeout(() => setWebhookUrlCopied(false), 3000);
   };
-
-  const webhookUrl = `${window.location.origin}/api/channels/${selectedChannel.id}/data`;
 
   return (
     <div className="min-h-screen bg-beige-100">
@@ -89,26 +111,30 @@ const ChannelDashboard: React.FC = () => {
               >
                 Refresh
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                leftIcon={<Settings size={16} />}
-              >
-                Settings
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                leftIcon={<Share2 size={16} />}
-              >
-                Share
-              </Button>
+              <Link to={`/channels/${selectedChannel.id}/details`}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Settings size={16} />}
+                >
+                  Settings
+                </Button>
+              </Link>
               <Button
                 variant="outline"
                 size="sm"
                 leftIcon={<Download size={16} />}
               >
                 Export
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Trash2 size={16} />}
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="bg-rose-100 hover:bg-rose-200 text-rose-700 hover:text-rose-800 border-rose-300"
+              >
+                Delete
               </Button>
             </motion.div>
           </div>
@@ -385,7 +411,7 @@ fetch(url, {
                   <Button
                     variant="outline"
                     size="sm"
-                    leftIcon={<Link size={16} />}
+                    leftIcon={<LinkIcon size={16} />}
                   >
                     Integration Guide
                   </Button>
@@ -400,7 +426,9 @@ fetch(url, {
               <ul className="space-y-2">
                 <li>
                   <a 
-                    href="#" 
+                    href={`/public/channels/${selectedChannel.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer" 
                     className="flex items-center px-3 py-2 rounded-md text-coffee-700 hover:bg-beige-100 transition-colors"
                   >
                     <ExternalLink size={16} className="mr-2 text-coffee-500" />
@@ -408,28 +436,37 @@ fetch(url, {
                   </a>
                 </li>
                 <li>
-                  <a 
-                    href="#" 
-                    className="flex items-center px-3 py-2 rounded-md text-coffee-700 hover:bg-beige-100 transition-colors"
-                  >
-                    <Download size={16} className="mr-2 text-coffee-500" />
-                    <span>Export Data (CSV)</span>
-                  </a>
-                </li>
+                   <a 
+                     href="#" 
+                     className="flex items-center px-3 py-2 rounded-md text-coffee-700 hover:bg-beige-100 transition-colors"
+                   >
+                     <Download size={16} className="mr-2 text-coffee-500" />
+                     <span>Export Data (CSV)</span>
+                   </a>
+                 </li>
                 <li>
-                  <a 
-                    href="#" 
+                  <Link 
+                    to={`/channels/${selectedChannel.id}/details`}
                     className="flex items-center px-3 py-2 rounded-md text-coffee-700 hover:bg-beige-100 transition-colors"
                   >
                     <Settings size={16} className="mr-2 text-coffee-500" />
                     <span>Channel Settings</span>
-                  </a>
+                  </Link>
                 </li>
               </ul>
             </Card>
           </motion.div>
         </div>
       </div>
+
+      {/* Delete Channel Modal */}
+      <ConfirmDeleteModal
+        isOpen={isDeleteModalOpen}
+        channelName={selectedChannel.name}
+        isDeleting={deleteInProgress}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 };

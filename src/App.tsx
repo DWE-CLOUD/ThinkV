@@ -10,6 +10,8 @@ import ChannelDashboard from './pages/ChannelDashboard';
 import ChannelDetails from './pages/ChannelDetails';
 import ApiDocumentation from './pages/ApiDocumentation';
 import SimulatorPage from './pages/SimulatorPage';
+import Documentation from './pages/Documentation';
+import PublicChannelView from './pages/PublicChannelView';
 
 function App() {
   return (
@@ -27,6 +29,9 @@ function App() {
           <Route path="/api-docs/:channelId" element={<ApiDocumentation />} />
           <Route path="/simulator" element={<SimulatorPage />} />
           <Route path="/simulator/:channelId" element={<SimulatorPage />} />
+          <Route path="/documentation" element={<Documentation />} />
+          {/* Public channel route */}
+          <Route path="/public/channels/:channelId" element={<PublicChannelView />} />
         </Routes>
       </Router>
     </AppProvider>

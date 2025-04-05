@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Settings, ArrowLeft, Trash2, Edit, Share2, Download, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Settings, ArrowLeft, Trash2, Edit, Download, AlertCircle } from 'lucide-react';
 import Header from '../components/layout/Header';
 import { useAppContext } from '../context/AppContext';
 import Card from '../components/ui/Card';
@@ -10,11 +10,15 @@ import ApiKeySection from '../components/channels/ApiKeySection';
 import ChannelChart from '../components/dashboard/ChannelChart';
 import ChannelStats from '../components/dashboard/ChannelStats';
 import TimeRangeSelector from '../components/dashboard/TimeRangeSelector';
+import ConfirmDeleteModal from '../components/channels/ConfirmDeleteModal';
 
 const ChannelDetails: React.FC = () => {
   const { channelId } = useParams<{ channelId: string }>();
   const { channels, selectedChannel, setSelectedChannel, deleteChannel, refreshData } = useAppContext();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -29,10 +33,26 @@ const ChannelDetails: React.FC = () => {
     }
   }, [channelId, channels, setSelectedChannel, navigate]);
 
-  const handleDelete = () => {
-    if (channelId) {
-      deleteChannel(channelId);
-      navigate('/dashboard');
+  const handleDelete = async () => {
+    if (!channelId) return;
+    
+    setDeleteInProgress(true);
+    setDeleteError(null);
+    
+    try {
+      const success = await deleteChannel(channelId);
+      if (success) {
+        navigate('/dashboard');
+      } else {
+        setDeleteError("Failed to delete channel. Please try again.");
+        setIsDeleteModalOpen(false);
+      }
+    } catch (error) {
+      console.error("Error deleting channel:", error);
+      setDeleteError("An unexpected error occurred. Please try again.");
+      setIsDeleteModalOpen(false);
+    } finally {
+      setDeleteInProgress(false);
     }
   };
 
@@ -91,34 +111,19 @@ const ChannelDetails: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                leftIcon={<Share2 size={16} />}
-              >
-                Share
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
                 leftIcon={<Download size={16} />}
               >
                 Export
               </Button>
               <Button
-                variant={confirmDelete ? "danger" : "outline"}
+                variant="outline"
                 size="sm"
                 leftIcon={<Trash2 size={16} />}
-                onClick={() => confirmDelete ? handleDelete() : setConfirmDelete(true)}
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="bg-rose-100 hover:bg-rose-200 text-rose-700 hover:text-rose-800 border-rose-300"
               >
-                {confirmDelete ? "Confirm Delete" : "Delete"}
+                Delete
               </Button>
-              {confirmDelete && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setConfirmDelete(false)}
-                >
-                  Cancel
-                </Button>
-              )}
             </div>
           </div>
           
@@ -136,6 +141,22 @@ const ChannelDetails: React.FC = () => {
             </span>
           </div>
         </div>
+
+        {deleteError && (
+          <AnimatePresence>
+            <motion.div 
+              className="mb-6 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-lg"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+            >
+              <div className="flex items-start">
+                <AlertCircle className="h-5 w-5 text-rose-500 mr-2 flex-shrink-0 mt-0.5" />
+                <span>{deleteError}</span>
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left column - channel details and API key */}
@@ -242,7 +263,7 @@ const ChannelDetails: React.FC = () => {
                   <div className="bg-coffee-800 text-beige-100 p-4 rounded-md overflow-x-auto">
                     <pre className="text-sm">
 {`# Using curl to send data
-curl -X POST "https://api.dwoscloud.shop/api/v1/channels/${selectedChannel.id}" \\
+curl -X POST "${window.location.origin}/api/v1/channels/${selectedChannel.id}/data" \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: ${selectedChannel.apiKey || 'YOUR_API_KEY'}" \\
   -d '{
@@ -260,7 +281,7 @@ curl -X POST "https://api.dwoscloud.shop/api/v1/channels/${selectedChannel.id}" 
                     <pre className="text-sm">
 {`// Using fetch API
 const apiKey = "${selectedChannel.apiKey || 'YOUR_API_KEY'}";
-const url = "https://api.dwoscloud.shop/api/v1/channels/${selectedChannel.id}/data";
+const url = "${window.location.origin}/api/v1/channels/${selectedChannel.id}/data";
 
 fetch(url, {
   method: 'POST',
@@ -288,7 +309,7 @@ fetch(url, {
                       <h4 className="text-sm font-medium text-coffee-800">API Documentation</h4>
                       <p className="text-sm text-coffee-600 mt-1">
                         For complete API documentation, including more examples and detailed endpoint information,
-                        visit our <a href="#" className="text-coffee-700 hover:text-coffee-900 underline">API Documentation</a>.
+                        visit our <a href="/api-docs" className="text-coffee-700 hover:text-coffee-900 underline">API Documentation</a>.
                       </p>
                     </div>
                   </div>
@@ -298,6 +319,15 @@ fetch(url, {
           </div>
         </div>
       </div>
+
+      {/* Delete Channel Modal */}
+      <ConfirmDeleteModal
+        isOpen={isDeleteModalOpen}
+        channelName={selectedChannel.name}
+        isDeleting={deleteInProgress}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 };

@@ -19,8 +19,16 @@ export const prepareChartData = (
     return acc;
   }, {});
 
-  // Get all unique timestamps and sort them
-  const allTimestamps = [...new Set(dataPoints.map(dp => dp.timestamp))].sort();
+  // Get all unique timestamps and sort them chronologically
+  let allTimestamps = [...new Set(dataPoints.map(dp => dp.timestamp))].sort();
+
+  // Limit the number of data points displayed based on the time range
+  // This helps prevent overcrowding of the chart
+  const maxDataPoints = 50;
+  if (allTimestamps.length > maxDataPoints) {
+    const step = Math.ceil(allTimestamps.length / maxDataPoints);
+    allTimestamps = allTimestamps.filter((_, i) => i % step === 0);
+  }
 
   // Format timestamps for labels based on time range
   const formatTimestamp = (timestamp: string) => {
@@ -43,6 +51,9 @@ export const prepareChartData = (
   const datasets = fields.map(field => {
     const fieldData = dataByField[field.id] || [];
     
+    // Sort field data by timestamp
+    fieldData.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    
     // Create a mapping of timestamp to data point for this field
     const dataByTimestamp = fieldData.reduce<Record<string, number>>((acc, dp) => {
       acc[dp.timestamp] = dp.value;
@@ -63,7 +74,8 @@ export const prepareChartData = (
       borderWidth: 2,
       pointRadius: 3,
       pointHoverRadius: 5,
-      fill: false,
+      fill: true,
+      spanGaps: true, // This ensures the line continues across null values
     };
   });
 
@@ -86,7 +98,11 @@ export const calculateFieldStats = (dataPoints: DataPoint[], fieldId: string) =>
     };
   }
 
-  const current = fieldData[fieldData.length - 1];
+  // Sort by timestamp to get latest value
+  const sortedData = [...dataPoints.filter(dp => dp.fieldId === fieldId)]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  
+  const current = sortedData.length > 0 ? sortedData[0].value : null;
   const min = Math.min(...fieldData);
   const max = Math.max(...fieldData);
   const avg = fieldData.reduce((sum, val) => sum + val, 0) / fieldData.length;

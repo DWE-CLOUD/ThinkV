@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Layers, ChevronRight, ExternalLink } from 'lucide-react';
+import { Plus, Layers, ExternalLink, Trash2, Settings, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
 import Button from '../ui/Button';
@@ -10,7 +10,10 @@ interface ChannelListProps {
 }
 
 const ChannelList: React.FC<ChannelListProps> = ({ onCreateChannel }) => {
-  const { channels, selectedChannel, setSelectedChannel } = useAppContext();
+  const { channels, selectedChannel, setSelectedChannel, deleteChannel } = useAppContext();
+  const [expandedChannelId, setExpandedChannelId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const list = {
     visible: {
@@ -33,9 +36,30 @@ const ChannelList: React.FC<ChannelListProps> = ({ onCreateChannel }) => {
     hidden: { opacity: 0, y: 20 }
   };
 
+  const handleToggleExpand = (channelId: string) => {
+    if (expandedChannelId === channelId) {
+      setExpandedChannelId(null);
+    } else {
+      setExpandedChannelId(channelId);
+      setSelectedChannel(channels.find(ch => ch.id === channelId) || null);
+    }
+  };
+
+  const handleDelete = async (channelId: string) => {
+    try {
+      setIsDeleting(true);
+      await deleteChannel(channelId);
+      setShowDeleteConfirm(null);
+    } catch (err) {
+      console.error("Error deleting channel:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <div className="bg-beige-50 rounded-lg shadow-warm h-full flex flex-col border border-beige-200">
-      <div className="p-4 border-b border-beige-200 flex justify-between items-center">
+      <div className="p-3 border-b border-beige-200 flex justify-between items-center">
         <h2 className="text-lg font-medium text-coffee-800">Your Channels</h2>
         <Button
           size="sm"
@@ -106,57 +130,126 @@ const ChannelList: React.FC<ChannelListProps> = ({ onCreateChannel }) => {
                   transition={{ duration: 0.3 }}
                 >
                   <motion.div
-                    className={`w-full text-left p-3 rounded-md transition-all ${
+                    className={`w-full rounded-md transition-all border-l-4 ${
                       selectedChannel?.id === channel.id
-                        ? 'bg-coffee-100 text-coffee-800 border-l-4 border-coffee-500 shadow-warm'
-                        : 'hover:bg-beige-100 text-coffee-700 border-l-4 border-transparent'
+                        ? 'border-coffee-500 shadow-warm'
+                        : 'border-transparent'
                     }`}
                     whileHover={{ x: 2 }}
                     whileTap={{ scale: 0.98 }}
                   >
-                    <div className="flex justify-between items-center">
+                    <div className={`flex justify-between items-center p-3 ${
+                      selectedChannel?.id === channel.id ? 'bg-coffee-100' : 'hover:bg-beige-100'
+                    }`}>
                       <motion.button
-                        onClick={() => setSelectedChannel(channel)}
-                        className="flex-1 text-left"
+                        onClick={() => handleToggleExpand(channel.id)}
+                        className="flex-1 text-left flex items-center"
                       >
-                        <p className="font-medium truncate">{channel.name}</p>
-                        <p className="text-xs text-coffee-500 truncate mt-1">
-                          {channel.description.length > 50
-                            ? channel.description.substring(0, 50) + '...'
-                            : channel.description}
-                        </p>
+                        <motion.div
+                          animate={{ rotate: expandedChannelId === channel.id ? 90 : 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="mr-2 text-coffee-500"
+                        >
+                          <ChevronRight size={16} />
+                        </motion.div>
+                        <p className="font-medium text-coffee-800 truncate">{channel.name}</p>
                       </motion.button>
-                      <Link 
-                        to={`/channels/${channel.id}`}
-                        className="p-1 rounded-md hover:bg-beige-200 text-coffee-500 hover:text-coffee-700"
-                        title="View channel dashboard"
-                      >
-                        <ExternalLink size={16} />
-                      </Link>
+                      
+                      <div className="flex space-x-1">
+                        <Link 
+                          to={`/channels/${channel.id}/details`}
+                          className="p-1 rounded-md hover:bg-beige-200 text-coffee-500 hover:text-coffee-700 flex-shrink-0"
+                          title="Channel Settings"
+                        >
+                          <Settings size={14} />
+                        </Link>
+                        <Link 
+                          to={`/channels/${channel.id}`}
+                          className="p-1 rounded-md hover:bg-beige-200 text-coffee-500 hover:text-coffee-700 flex-shrink-0"
+                          title="View channel dashboard"
+                        >
+                          <ExternalLink size={14} />
+                        </Link>
+                      </div>
                     </div>
-                    <div className="flex mt-2 flex-wrap">
-                      {channel.fields.slice(0, 3).map(field => (
-                        <motion.span
-                          key={field.id}
-                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mr-1 mb-1"
-                          style={{
-                            backgroundColor: `${field.color}10`,
-                            color: field.color,
-                          }}
-                          whileHover={{ scale: 1.05 }}
+                    
+                    <AnimatePresence>
+                      {expandedChannelId === channel.id && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="pl-5 pr-3 pb-3 pt-1 bg-beige-50"
                         >
-                          {field.name}
-                        </motion.span>
-                      ))}
-                      {channel.fields.length > 3 && (
-                        <motion.span 
-                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-beige-200 text-coffee-700"
-                          whileHover={{ scale: 1.05 }}
-                        >
-                          +{channel.fields.length - 3} more
-                        </motion.span>
+                          {channel.description && (
+                            <p className="text-xs text-coffee-600 mb-2">{channel.description}</p>
+                          )}
+                          
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {channel.fields.slice(0, 3).map(field => (
+                              <motion.span
+                                key={field.id}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                style={{
+                                  backgroundColor: `${field.color}10`,
+                                  color: field.color,
+                                }}
+                                whileHover={{ scale: 1.05 }}
+                              >
+                                {field.name}
+                              </motion.span>
+                            ))}
+                            {channel.fields.length > 3 && (
+                              <motion.span 
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-beige-200 text-coffee-700"
+                                whileHover={{ scale: 1.05 }}
+                              >
+                                +{channel.fields.length - 3}
+                              </motion.span>
+                            )}
+                          </div>
+                          
+                          <div className="flex justify-between items-center mt-2 pt-2 border-t border-beige-200">
+                            <div className="text-[10px] text-coffee-500">
+                              Created: {new Date(channel.createdAt).toLocaleDateString()}
+                            </div>
+                            
+                            {showDeleteConfirm === channel.id ? (
+                              <div className="flex items-center space-x-1">
+                                <Button
+                                  variant="danger"
+                                  size="xs"
+                                  isLoading={isDeleting}
+                                  onClick={() => handleDelete(channel.id)}
+                                  className="bg-rose-600 hover:bg-rose-700 text-white text-[10px] py-0.5 px-1.5"
+                                >
+                                  Confirm
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="xs"
+                                  onClick={() => setShowDeleteConfirm(null)}
+                                  className="text-[10px] py-0.5 px-1.5"
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex space-x-1">
+                                <button
+                                  className="text-coffee-500 hover:text-coffee-700 p-1 rounded hover:bg-beige-200"
+                                  title="Delete channel"
+                                  onClick={() => setShowDeleteConfirm(channel.id)}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
                       )}
-                    </div>
+                    </AnimatePresence>
                   </motion.div>
                 </motion.li>
               ))}

@@ -1,7 +1,7 @@
 // This middleware intercepts API requests and redirects them to the FastAPI backend
 
 // The base URL for the FastAPI backend
-const FASTAPI_BASE_URL = 'https://api.dwoscloud.shop';
+const FASTAPI_BASE_URL = 'https://api.thinkv.space';
 
 // This function redirects API requests to the FastAPI backend
 export async function handleApiRequest(endpoint: string, method: string, headers: Record<string, string>, body?: any) {
@@ -15,12 +15,18 @@ export async function handleApiRequest(endpoint: string, method: string, headers
     // Construct the FastAPI URL
     let fastApiUrl = `${FASTAPI_BASE_URL}`;
     
-    // Keep the original path from /api/v1/...
-    if (pathParts[0] === 'api' && pathParts.length > 1) {
-      // Add all path parts to construct the full path
-      for (let i = 0; i < pathParts.length; i++) {
-        fastApiUrl += `/${pathParts[i]}`;
-      }
+    // Special case for channel creation API
+    if (endpoint.includes('/api/channels/api')) {
+      fastApiUrl = `${FASTAPI_BASE_URL}/channels/api`;
+      console.log(`Channel creation endpoint detected. Using: ${fastApiUrl}`);
+    }
+    // Keep the original path but ensure we don't duplicate /api
+    else if (pathParts[0] === 'api' && pathParts.length > 1) {
+      // Add all path parts except the initial 'api'
+      fastApiUrl += `/${pathParts.slice(1).join('/')}`;
+    } else if (pathParts[0] === 'api') {
+      // Handle case where /api is the only path part
+      fastApiUrl += '/';
     } else {
       throw new Error(`Invalid API path: ${url.pathname}`);
     }
@@ -32,20 +38,39 @@ export async function handleApiRequest(endpoint: string, method: string, headers
     
     console.log(`Redirecting to FastAPI: ${fastApiUrl}`);
     
-    // Perform the actual fetch to the FastAPI backend
-    const response = await fetch(fastApiUrl, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`FastAPI error (${response.status}): ${errorText}`);
+    try {
+      // Perform the actual fetch to the FastAPI backend
+      const response = await fetch(fastApiUrl, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`FastAPI error (${response.status}): ${errorText || response.statusText}`);
+      }
+      
+      const responseData = await response.json();
+      
+      // Store data points in Supabase if this is a data-related endpoint
+      if (pathParts.includes('data') || pathParts.includes('update')) {
+        // You could add logic here to store data in Supabase
+        console.log('Data endpoint accessed - data should be stored in Supabase');
+      }
+      
+      return responseData;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
     }
-    
-    const responseData = await response.json();
-    return responseData;
   } catch (error) {
     console.error('API request error:', error);
     throw error;

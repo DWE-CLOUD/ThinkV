@@ -9,10 +9,11 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // Proxy API requests to Supabase
+      // Proxy API requests to FastAPI backend
       '/api': {
-        target: 'https://fmzchlebsfzgjohueqaj.supabase.co',
+        target: 'https://api.thinkv.space',
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, RefreshCw, Smartphone, Zap, BarChart2, Database, Trash2 } from 'lucide-react';
+import { Play, Pause, Trash2, Smartphone, Database } from 'lucide-react';
 import { DeviceSimulator as DeviceSimulatorClass } from '../../utils/deviceSimulator';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
@@ -13,8 +13,9 @@ interface DeviceSimulatorProps {
 const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ channel }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
-  const [interval, setInterval] = useState(5000); // 5 seconds default
+  const [updateInterval, setUpdateInterval] = useState(5000); // 5 seconds default
   const [variation, setVariation] = useState(10); // 10% variation default
+  const [simulationError, setSimulationError] = useState<string | null>(null);
   const simulatorRef = useRef<DeviceSimulatorClass | null>(null);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -41,19 +42,24 @@ const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ channel }) => {
       return;
     }
 
+    setSimulationError(null);
+
     // Create a new simulator instance
     simulatorRef.current = new DeviceSimulatorClass({
       channelId: channel.id,
       apiKey: channel.apiKey || '',
-      interval,
+      interval: updateInterval,
       fields: channel.fields,
       variation,
       randomize: true,
       onUpdate: (data) => {
-        setLogs(prev => [...prev.slice(-49), data]); // Keep only the last 50 logs
+        // Add a timestamp to the log entry
+        setLogs(prev => [...prev.slice(-49), { ...data, timestamp: new Date().toISOString() }]);
+        setSimulationError(null);
       },
       onError: (error) => {
         setLogs(prev => [...prev.slice(-49), { error: error.message, timestamp: new Date().toISOString() }]);
+        setSimulationError(error.message);
       }
     });
 
@@ -64,6 +70,7 @@ const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ channel }) => {
 
   const clearLogs = () => {
     setLogs([]);
+    setSimulationError(null);
   };
 
   return (
@@ -94,8 +101,8 @@ const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ channel }) => {
               min="1000"
               step="1000"
               disabled={isRunning}
-              value={interval}
-              onChange={(e) => setInterval(parseInt(e.target.value))}
+              value={updateInterval}
+              onChange={(e) => setUpdateInterval(parseInt(e.target.value))}
               className="w-full px-3 py-2 bg-beige-100 border border-beige-300 rounded-md shadow-sm focus:outline-none focus:ring-coffee-500 focus:border-coffee-500 text-coffee-800"
             />
           </div>
@@ -114,6 +121,18 @@ const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ channel }) => {
             />
           </div>
         </div>
+
+        {simulationError && (
+          <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-md">
+            <div className="flex items-start">
+              <Trash2 size={16} className="text-rose-500 mr-2 mt-1" />
+              <div>
+                <p className="font-medium">Simulation Error</p>
+                <p className="text-sm">{simulationError}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="border-t border-beige-200 pt-4">
           <div className="flex justify-between items-center mb-2">
@@ -171,8 +190,12 @@ const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({ channel }) => {
 
         <div className="bg-beige-100 p-3 rounded-md text-sm text-coffee-700">
           <p>
-            This simulator will send random data to your channel every {interval / 1000} seconds with {variation}% variation.
-            Data will be sent directly to the FastAPI backend.
+            This simulator will send random data to your channel every {updateInterval / 1000} seconds with {variation}% variation.
+            Data will be sent directly to the ThinkV API using the channel's API key.
+          </p>
+          <p className="mt-2 text-xs">
+            <strong>API Endpoint:</strong> {`https://api.thinkv.space/channels/${channel.id}`}<br />
+            <strong>API Key:</strong> {channel.apiKey ? (channel.apiKey.length > 10 ? channel.apiKey.substring(0, 10) + '...' : channel.apiKey) : 'No API key available'}
           </p>
         </div>
       </div>

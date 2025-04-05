@@ -17,14 +17,14 @@ const TimeRangeSelector: React.FC = () => {
 
   return (
     <div className="flex items-center">
-      <div className="text-sm text-coffee-500 mr-2">Time Range:</div>
+      <div className="text-xs text-coffee-500 mr-1 hidden xs:block">Time:</div>
       <div className="inline-flex rounded-md shadow-sm bg-beige-200 p-0.5">
         {timeRanges.map((range, index) => (
           <button
             key={range.value}
             type="button"
             className={`
-              relative px-3 py-1.5 text-sm font-medium
+              relative px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-medium
               ${index === 0 ? 'rounded-l-md' : ''}
               ${index === timeRanges.length - 1 ? 'rounded-r-md' : ''}
               ${selectedTimeRange === range.value 

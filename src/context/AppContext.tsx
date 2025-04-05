@@ -15,9 +15,6 @@ import {
   isValidUuid
 } from '../utils/supabase';
 
-// FastAPI backend URL
-const FASTAPI_BASE_URL = 'https://api.dwoscloud.shop';
-
 interface AppContextProps {
   currentUser: User | null;
   channels: Channel[];
@@ -58,7 +55,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     async function loadUserSession() {
       setAuthLoading(true);
       try {
-        // Check for existing session
         const { session, error: sessionError } = await getCurrentSession();
         
         if (sessionError) {
@@ -86,19 +82,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               bio: user.user_metadata?.bio || '',
             });
           }
-        } else {
-          // Fallback to mock user for development
-          const mockUser = {
-            id: 'mock-user-id',
-            name: 'John Doe',
-            email: 'john@example.com',
-            avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80',
-            bio: 'IoT enthusiast and developer. I love connecting devices and visualizing data.',
-          };
-          setCurrentUser(mockUser);
         }
 
-        // Set auth loading to false after user is set
         setAuthLoading(false);
       } catch (error) {
         console.error('Error in auth flow:', error);
@@ -111,6 +96,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Listen for auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state changed:', event);
         if (event === 'SIGNED_IN' && session?.user) {
           setCurrentUser({
             id: session.user.id,
@@ -138,60 +124,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!currentUser) return;
       
       setIsLoading(true);
+      setError(null);
+      
       try {
-        // Fetch channels from Supabase
         const { channels: userChannels, error } = await getUserChannels(currentUser.id);
         
         if (error) {
-          console.error('Error fetching channels:', error);
-          // Fall back to mock data if fetch fails
-          const enhancedMockChannels = mockChannels.map(channel => ({
-            ...channel,
-            userId: currentUser.id,
-            apiKey: channel.apiKey || `thinkv_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`
-          }));
-          setChannels(enhancedMockChannels);
-        } else if (userChannels && userChannels.length > 0) {
+          throw error;
+        }
+        
+        if (userChannels && userChannels.length > 0) {
           setChannels(userChannels);
         } else {
-          // If no channels are found, use mock data for initial experience
-          // In real app, might start with empty state instead
-          const enhancedMockChannels = mockChannels.map(channel => ({
-            ...channel,
-            userId: currentUser.id,
-            apiKey: channel.apiKey || `thinkv_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`
-          }));
-          
-          // Save mock channels to database for persistence
-          for (const channel of enhancedMockChannels) {
-            await createChannelApi({
+          // If no channels exist, create mock channels in Supabase
+          const mockPromises = mockChannels.map(channel => 
+            createChannelApi({
               name: channel.name,
               description: channel.description,
               userId: currentUser.id,
               isPublic: channel.isPublic,
               tags: channel.tags,
               fields: channel.fields,
-              apiKey: channel.apiKey
-            });
-          }
+              apiKey: channel.apiKey || `thinkv_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`
+            })
+          );
           
-          // Fetch again to get the persisted channels with proper IDs
-          const { channels: savedChannels } = await getUserChannels(currentUser.id);
-          if (savedChannels && savedChannels.length > 0) {
-            setChannels(savedChannels);
-          } else {
-            setChannels(enhancedMockChannels);
-          }
+          const results = await Promise.all(mockPromises);
+          const createdChannels = results
+            .filter(result => result.channel !== null)
+            .map(result => result.channel as Channel);
+          
+          setChannels(createdChannels);
         }
       } catch (error) {
         console.error('Error loading channels:', error);
-        // Fall back to mock data
-        const enhancedMockChannels = mockChannels.map(channel => ({
-          ...channel,
-          userId: currentUser.id,
-          apiKey: channel.apiKey || `thinkv_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`
-        }));
-        setChannels(enhancedMockChannels);
+        setError(`Failed to load channels: ${error instanceof Error ? error.message : 'Unknown error'}`);
       } finally {
         setIsLoading(false);
       }
@@ -212,18 +179,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (selectedChannel) {
       setIsLoading(true);
       
-      // First try to fetch data from Supabase
       async function fetchChannelData() {
         try {
-          // For mock channels with numeric IDs, just use mock data directly
-          if (!isValidUuid(selectedChannel.id)) {
-            const mockData = getChannelData(selectedChannel.id, selectedTimeRange);
-            setDataPoints(mockData);
-            setIsLoading(false);
-            return;
-          }
-          
-          // Try to fetch real data from Supabase
           const { dataPoints: fetchedDataPoints, error } = await getDataPoints(selectedChannel.id, selectedTimeRange);
           
           if (error) {
@@ -233,13 +190,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (fetchedDataPoints && fetchedDataPoints.length > 0) {
             setDataPoints(fetchedDataPoints);
           } else {
-            // If no real data, fall back to mock data
             const mockData = getChannelData(selectedChannel.id, selectedTimeRange);
             setDataPoints(mockData);
           }
         } catch (error) {
           console.error('Error fetching channel data:', error);
-          // Fall back to mock data
           const mockData = getChannelData(selectedChannel.id, selectedTimeRange);
           setDataPoints(mockData);
         } finally {
@@ -247,7 +202,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
 
-      // For now, simulate with mock data with a delay for UX
       setTimeout(() => {
         fetchChannelData();
       }, 600);
@@ -258,17 +212,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (selectedChannel) {
       setIsLoading(true);
       
-      // Try to fetch real data from Supabase first
       async function refreshChannelData() {
         try {
-          // For mock channels with numeric IDs, just use mock data directly
-          if (!isValidUuid(selectedChannel.id)) {
-            const mockData = getChannelData(selectedChannel.id, selectedTimeRange);
-            setDataPoints(mockData);
-            setIsLoading(false);
-            return;
-          }
-          
           const { dataPoints: fetchedDataPoints, error } = await getDataPoints(selectedChannel.id, selectedTimeRange);
           
           if (error) {
@@ -278,13 +223,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (fetchedDataPoints && fetchedDataPoints.length > 0) {
             setDataPoints(fetchedDataPoints);
           } else {
-            // If no real data, use mock data
             const mockData = getChannelData(selectedChannel.id, selectedTimeRange);
             setDataPoints(mockData);
           }
         } catch (error) {
-          console.error('Error refreshing channel data:', error);
-          // Fall back to mock data
+          console.error('Error refreshing data:', error);
           const mockData = getChannelData(selectedChannel.id, selectedTimeRange);
           setDataPoints(mockData);
         } finally {
@@ -292,112 +235,98 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
 
-      // Simulate fetching with a delay
       setTimeout(() => {
         refreshChannelData();
       }, 600);
     }
   };
 
-  const createChannel = async (channelData: Omit<Channel, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<Channel | null> => {
+  const createChannel = async (channel: Omit<Channel, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<Channel | null> => {
     if (!currentUser) return null;
     
     setIsLoading(true);
-    setError(null); // Clear any previous errors
+    setError(null);
     
     try {
-      // First, register the channel with FastAPI backend
-      const fieldNames = channelData.fields.map(field => field.name);
-
-      // Create a channel on the FastAPI server
-      console.log('Creating channel on FastAPI server...');
-      try {
-        const response = await fetch(`${FASTAPI_BASE_URL}/channels/api`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name: channelData.name,
-            description: channelData.description || '',
-            field_names: fieldNames
-          })
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('FastAPI error:', errorText);
-          setError(`Failed to create channel on API server: ${errorText}`);
-          throw new Error(`FastAPI error: ${errorText}`);
-        }
-
-        const fastApiChannel = await response.json();
-        console.log('Channel created on FastAPI:', fastApiChannel);
-
-        // Use the ID and API key from FastAPI
-        const apiKeyFromServer = fastApiChannel.api_key;
-        const channelIdFromServer = fastApiChannel.id;
-
-        console.log(`Using FastAPI channel ID: ${channelIdFromServer} and API key: ${apiKeyFromServer}`);
-
-        // Now create in Supabase with the same ID and API key from FastAPI
-        const { channel: newChannel, error } = await createChannelApi({
-          ...channelData,
-          id: channelIdFromServer, // Use the ID from FastAPI
-          userId: currentUser.id,
-          apiKey: apiKeyFromServer
-        });
-        
-        if (error) {
-          console.error('Error creating channel in Supabase:', error);
-          // Fall back to using only the FastAPI channel info
-          const fastApiConvertedChannel: Channel = {
-            id: channelIdFromServer,
-            name: fastApiChannel.name,
-            description: fastApiChannel.description || '',
-            userId: currentUser.id,
-            isPublic: channelData.isPublic || true,
-            tags: channelData.tags || [],
-            createdAt: fastApiChannel.created_at,
-            updatedAt: fastApiChannel.created_at,
-            apiKey: apiKeyFromServer,
-            fields: Object.entries(fastApiChannel.fields || {}).map(([fieldId, fieldData]: [string, any]) => ({
-              id: fieldData.field_id.toString(),
-              name: fieldData.name,
-              fieldNumber: parseInt(fieldId),
-              color: channelData.fields[parseInt(fieldId) - 1]?.color || '#c4a389',
-              unit: channelData.fields[parseInt(fieldId) - 1]?.unit || ''
-            }))
-          };
-
-          setChannels(prev => [...prev, fastApiConvertedChannel]);
-          setSelectedChannel(fastApiConvertedChannel);
-          return fastApiConvertedChannel;
-        }
-        
-        if (newChannel) {
-          // Make sure the channel has the right ID from FastAPI
-          const finalChannel = {
-            ...newChannel,
-            id: channelIdFromServer // Ensure we're using the FastAPI channel ID
-          };
-          
-          setChannels(prev => [...prev, finalChannel]);
-          setSelectedChannel(finalChannel);
-          return finalChannel;
-        }
-        
-        return null;
-      } catch (fastApiError) {
-        console.error('Error with FastAPI channel creation:', fastApiError);
-        setError(`Failed to create channel: ${fastApiError instanceof Error ? fastApiError.message : "Unknown error"}`);
-        
-        // No fallback to local creation - we need the FastAPI channel to work
-        return null;
+      // Create channel using the IoT API first - Use the correct API endpoint
+      const apiUrl = '/api/channels/api';
+      
+      // Generate a random delete secret
+      const deleteSecret = Math.random().toString(36).substring(2, 15);
+      
+      // Map field names to the format expected by the API
+      const fieldNames = channel.fields.map(field => field.name);
+      
+      // Prepare the payload for the API
+      const apiPayload = {
+        name: channel.name,
+        description: channel.description || '',
+        field_names: fieldNames,
+        delete_secret: deleteSecret
+      };
+      
+      console.log('Creating channel in API:', apiPayload);
+      console.log('API URL:', apiUrl);
+      
+      // Send the request to create the channel in the IoT API
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(apiPayload)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error (${response.status}): ${errorText || response.statusText}`);
       }
+      
+      const apiResult = await response.json();
+      console.log('API channel creation result:', apiResult);
+      
+      if (!apiResult.id) {
+        throw new Error('API response missing channel ID');
+      }
+      
+      // Fetch the channel details to get the API key
+      const channelDetailsUrl = `/api/channels/${apiResult.id}`;
+      const detailsResponse = await fetch(channelDetailsUrl);
+      
+      if (!detailsResponse.ok) {
+        const errorText = await detailsResponse.text();
+        throw new Error(`Failed to get channel details: ${errorText || detailsResponse.statusText}`);
+      }
+      
+      const channelDetails = await detailsResponse.json();
+      console.log('Channel details:', channelDetails);
+      
+      if (!channelDetails.api_key) {
+        throw new Error('Channel details missing API key');
+      }
+      
+      // Now create the channel in Supabase with the API channel ID
+      const { channel: newChannel, error } = await createChannelApi({
+        ...channel,
+        userId: currentUser.id,
+        apiKey: channelDetails.api_key,
+        id: apiResult.id
+      });
+      
+      if (error) {
+        throw error;
+      }
+      
+      if (newChannel) {
+        setChannels(prev => [newChannel, ...prev]);
+        setSelectedChannel(newChannel);
+        return newChannel;
+      }
+      
+      return null;
     } catch (error) {
-      console.error('Error in channel creation:', error);
-      setError(`Failed to create channel: ${error instanceof Error ? error.message : "Unknown error"}`);
+      console.error('Error creating channel:', error);
+      setError(`Failed to create channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return null;
     } finally {
       setIsLoading(false);
@@ -407,32 +336,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateChannel = async (channelId: string, updates: Partial<Channel>): Promise<Channel | null> => {
     setIsLoading(true);
     try {
-      // Update in Supabase
       const { channel: updatedChannel, error } = await updateChannelApi(channelId, updates);
       
       if (error) {
-        console.error('Error updating channel in Supabase:', error);
-        
-        // Fall back to local update only
-        const updatedChannels = channels.map(channel => 
-          channel.id === channelId 
-            ? { ...channel, ...updates, updatedAt: new Date().toISOString() } 
-            : channel
-        );
-        
-        setChannels(updatedChannels);
-        
-        if (selectedChannel?.id === channelId) {
-          const updatedSelectedChannel = { ...selectedChannel, ...updates, updatedAt: new Date().toISOString() };
-          setSelectedChannel(updatedSelectedChannel);
-          return updatedSelectedChannel;
-        }
-        
-        return updatedChannels.find(c => c.id === channelId) || null;
+        throw error;
       }
       
       if (updatedChannel) {
-        // Update local state with data from Supabase
         setChannels(prev => prev.map(channel => 
           channel.id === channelId ? updatedChannel : channel
         ));
@@ -446,7 +356,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       return null;
     } catch (error) {
-      console.error('Error in channel update:', error);
+      console.error('Error updating channel:', error);
       return null;
     } finally {
       setIsLoading(false);
@@ -456,35 +366,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const deleteChannel = async (channelId: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      // Delete from Supabase
+      // Delete from Supabase only
       const { error } = await deleteChannelApi(channelId);
       
       if (error) {
-        console.error('Error deleting channel from Supabase:', error);
-        // Fall back to local deletion only
-        setChannels(prev => prev.filter(channel => channel.id !== channelId));
-        
-        if (selectedChannel?.id === channelId) {
-          // Set another channel as selected or null if none left
-          const remainingChannels = channels.filter(c => c.id !== channelId);
-          setSelectedChannel(remainingChannels.length > 0 ? remainingChannels[0] : null);
-        }
-        
-        return true;
+        throw error;
       }
       
-      // Update local state
       setChannels(prev => prev.filter(channel => channel.id !== channelId));
       
       if (selectedChannel?.id === channelId) {
-        // Set another channel as selected or null if none left
         const remainingChannels = channels.filter(c => c.id !== channelId);
         setSelectedChannel(remainingChannels.length > 0 ? remainingChannels[0] : null);
       }
       
       return true;
     } catch (error) {
-      console.error('Error in channel deletion:', error);
+      console.error('Error deleting channel:', error);
       return false;
     } finally {
       setIsLoading(false);
@@ -498,8 +396,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCurrentUser(null);
       setChannels([]);
       setSelectedChannel(null);
+      return Promise.resolve();
     } catch (error) {
       console.error('Error signing out:', error);
+      return Promise.reject(error);
     } finally {
       setIsLoading(false);
     }
@@ -509,14 +409,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!currentUser) return;
 
     try {
-      // Update profile in Supabase
       const { error } = await updateUserProfileApi(currentUser.id, updates);
       
       if (error) {
-        console.error('Error updating user profile in Supabase:', error);
+        throw error;
       }
       
-      // Update local state
       setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
     } catch (error) {
       console.error('Error updating profile:', error);
@@ -524,34 +422,61 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Add function to regenerate API key
   const regenerateChannelApiKey = async (channelId: string): Promise<string> => {
     try {
-      // Regenerate via Supabase util function
+      // Try to regenerate API key with the external API first - Use the proxy configuration
+      try {
+        const apiUrl = `/api/channels/${channelId}/apikey`;
+        const response = await fetch(apiUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          // You might need to add your auth token here if required by the API
+        });
+        
+        if (response.ok) {
+          const apiResult = await response.json();
+          if (apiResult.api_key) {
+            // Update in Supabase with the new key from the API
+            const { error } = await supabase
+              .from('channels')
+              .update({ api_key: apiResult.api_key, updated_at: new Date().toISOString() })
+              .eq('id', channelId);
+            
+            if (error) {
+              console.error('Error updating API key in Supabase:', error);
+            }
+            
+            // Update local state
+            setChannels(prev => 
+              prev.map(channel => 
+                channel.id === channelId 
+                  ? { ...channel, apiKey: apiResult.api_key, updatedAt: new Date().toISOString() } 
+                  : channel
+              )
+            );
+            
+            if (selectedChannel?.id === channelId) {
+              setSelectedChannel(prev => prev ? { ...prev, apiKey: apiResult.api_key, updatedAt: new Date().toISOString() } : null);
+            }
+            
+            return apiResult.api_key;
+          }
+        } else {
+          console.warn('Could not regenerate API key with the external API, falling back to Supabase');
+        }
+      } catch (apiError) {
+        console.warn('Error regenerating API key with external API:', apiError);
+      }
+      
+      // Fall back to Supabase regeneration
       const { apiKey, error } = await regenerateApiKey(channelId);
       
       if (error) {
-        console.error('Error regenerating API key:', error);
-        // Fall back to local generation
-        const newApiKey = `thinkv_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
-        
-        // Update local state with new API key
-        setChannels(prev => 
-          prev.map(channel => 
-            channel.id === channelId 
-              ? { ...channel, apiKey: newApiKey, updatedAt: new Date().toISOString() } 
-              : channel
-          )
-        );
-        
-        if (selectedChannel?.id === channelId) {
-          setSelectedChannel(prev => prev ? { ...prev, apiKey: newApiKey, updatedAt: new Date().toISOString() } : null);
-        }
-        
-        return newApiKey;
+        throw error;
       }
       
-      // Update local state with new API key from Supabase
       setChannels(prev => 
         prev.map(channel => 
           channel.id === channelId 
@@ -566,24 +491,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       return apiKey;
     } catch (error) {
-      console.error('Error in API key regeneration:', error);
-      // Fall back to local generation
-      const newApiKey = `thinkv_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
-      
-      // Update local state with new API key
-      setChannels(prev => 
-        prev.map(channel => 
-          channel.id === channelId 
-            ? { ...channel, apiKey: newApiKey, updatedAt: new Date().toISOString() } 
-            : channel
-        )
-      );
-      
-      if (selectedChannel?.id === channelId) {
-        setSelectedChannel(prev => prev ? { ...prev, apiKey: newApiKey, updatedAt: new Date().toISOString() } : null);
-      }
-      
-      return newApiKey;
+      console.error('Error regenerating API key:', error);
+      throw error;
     }
   };
 

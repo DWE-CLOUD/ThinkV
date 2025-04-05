@@ -14,6 +14,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [view, setView] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [persistSession, setPersistSession] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -28,7 +29,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       if (view === 'login') {
         const { error, data } = await supabase.auth.signInWithPassword({
           email,
-          password
+          password,
+          options: {
+            // Set session persistence based on user preference
+            // Default to true for better UX
+            persistSession: persistSession
+          }
         });
 
         if (error) throw error;
@@ -44,7 +50,11 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/dashboard`
+            emailRedirectTo: `${window.location.origin}/dashboard`,
+            data: {
+              // Add default user metadata
+              full_name: email.split('@')[0]
+            }
           }
         });
 
@@ -131,7 +141,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             onClick={onClose}
           />
           
-          <div className="min-h-screen px-4 flex items-center justify-center">
+          <div className="min-h-screen px-4 py-8 flex items-center justify-center">
             <motion.div
               className="bg-beige-50 rounded-xl shadow-warm-lg w-full max-w-md relative z-10 border border-beige-200 overflow-hidden"
               initial="hidden"
@@ -247,6 +257,20 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                       placeholder="••••••••"
                       required
                     />
+                  </div>
+                  
+                  {/* Session persistence option */}
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="persistSession"
+                      checked={persistSession}
+                      onChange={(e) => setPersistSession(e.target.checked)}
+                      className="h-4 w-4 text-coffee-600 focus:ring-coffee-500 border-beige-300 rounded"
+                    />
+                    <label htmlFor="persistSession" className="ml-2 block text-sm text-coffee-700">
+                      {view === 'login' ? 'Stay signed in' : 'Keep me signed in'}
+                    </label>
                   </div>
                   
                   <motion.button

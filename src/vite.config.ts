@@ -11,10 +11,10 @@ export default defineConfig({
     proxy: {
       // Proxy API requests to FastAPI backend
       '/api': {
-        target: 'https://api.dwoscloud.shop',
+        target: 'https://api.thinkv.space',
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path,
+        rewrite: (path) => path.replace(/^\/api/, ''),
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {
             console.log('proxy error', err);

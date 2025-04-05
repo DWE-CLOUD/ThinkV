@@ -21,6 +21,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({
   const [isCopied, setIsCopied] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [regenerateError, setRegenerateError] = useState<string | null>(null);
 
   const toggleVisibility = () => {
     setIsVisible(!isVisible);
@@ -35,6 +36,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({
   const handleRegenerateApiKey = async () => {
     try {
       setIsRegenerating(true);
+      setRegenerateError(null);
       
       // Call the regenerateChannelApiKey function from context
       const newKey = await regenerateChannelApiKey(channelId);
@@ -48,6 +50,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({
       setIsVisible(true);
     } catch (error) {
       console.error('Error regenerating API key:', error);
+      setRegenerateError(error instanceof Error ? error.message : 'Failed to regenerate API key');
     } finally {
       setIsRegenerating(false);
     }
@@ -88,7 +91,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({
                   This will invalidate the current API key. Any devices or applications using this 
                   key will stop working until updated with the new key.
                 </p>
-                <div className="mt-3 flex space-x-3">
+                <div className="mt-3 flex flex-wrap gap-3">
                   <Button
                     variant="outline"
                     size="sm"
@@ -111,6 +114,20 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({
           </motion.div>
         ) : (
           <div className="space-y-4">
+            {regenerateError && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="p-3 bg-rose-50 border border-rose-200 rounded-md mb-3"
+              >
+                <div className="flex items-start">
+                  <AlertCircle className="text-rose-500 h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-rose-700">{regenerateError}</p>
+                </div>
+              </motion.div>
+            )}
+            
             <div>
               <p className="text-sm text-coffee-600 mb-2">
                 Use this API key to authenticate devices and applications sending data to this channel.
@@ -122,13 +139,14 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({
                     type={isVisible ? 'text' : 'password'} 
                     value={apiKey}
                     readOnly
-                    className="font-mono text-sm w-full pr-24 pl-3 py-2 rounded-md bg-beige-100 border border-beige-300 focus:outline-none focus:ring-coffee-500 focus:border-coffee-500"
+                    className="font-mono text-sm w-full pr-24 pl-3 py-2 rounded-md bg-beige-100 border border-beige-300 focus:outline-none focus:ring-coffee-500 focus:border-coffee-500 overflow-x-auto"
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center pr-2 space-x-1">
                     <button 
                       onClick={toggleVisibility} 
                       className="p-1 rounded-md hover:bg-beige-200 text-coffee-500 hover:text-coffee-700 transition-colors"
                       title={isVisible ? 'Hide API key' : 'Show API key'}
+                      aria-label={isVisible ? 'Hide API key' : 'Show API key'}
                     >
                       {isVisible ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
@@ -136,6 +154,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({
                       onClick={copyToClipboard} 
                       className="p-1 rounded-md hover:bg-beige-200 text-coffee-500 hover:text-coffee-700 transition-colors"
                       title="Copy API key"
+                      aria-label="Copy API key to clipboard"
                     >
                       <Copy size={16} />
                     </button>

@@ -5,20 +5,38 @@ import { calculateFieldStats } from '../../utils/chartUtils';
 import Card from '../ui/Card';
 import Loader from '../ui/Loader';
 import { TrendingUp, TrendingDown, AlertTriangle, RefreshCw } from 'lucide-react';
+import { supabase } from '../../utils/supabase';
+import { DataPoint } from '../../types';
+import { v4 as uuidv4 } from 'uuid';
 
 // FastAPI backend URL
-const FASTAPI_BASE_URL = 'https://api.dwoscloud.shop';
+const FASTAPI_BASE_URL = 'https://api.thinkv.space';
 
 const ChannelStats: React.FC = () => {
   const { selectedChannel, dataPoints, isLoading } = useAppContext();
   const [apiStats, setApiStats] = useState<Record<string, any>>({});
   const [apiStatsLoading, setApiStatsLoading] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
+  const [localStats, setLocalStats] = useState<Record<string, any>>({});
 
-  const formatValue = (value: number | null, unit?: string) => {
-    if (value === null) return 'N/A';
+  const formatValue = (value: number | null | undefined, unit?: string) => {
+    if (value === null || value === undefined) return 'N/A';
     return unit ? `${value.toFixed(2)} ${unit}` : value.toFixed(2);
   };
+
+  // Calculate stats from local data
+  useEffect(() => {
+    if (selectedChannel && dataPoints.length > 0) {
+      const stats: Record<string, any> = {};
+      
+      selectedChannel.fields.forEach(field => {
+        stats[field.id] = calculateFieldStats(dataPoints, field.id);
+      });
+      
+      setLocalStats(stats);
+    }
+  }, [selectedChannel, dataPoints]);
 
   // Fetch latest field values from the API
   const fetchApiStats = async () => {
@@ -26,20 +44,34 @@ const ChannelStats: React.FC = () => {
     
     setApiStatsLoading(true);
     setApiError(null);
+    setSupabaseError(null);
     
     try {
-      // Make a direct fetch to the FastAPI backend
-      const response = await fetch(`${FASTAPI_BASE_URL}/api/v1/channels/${selectedChannel.id}`);
+      // Get the channel data from the API
+      const response = await fetch(`${FASTAPI_BASE_URL}/channels/${selectedChannel.id}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (response.status === 404) {
+        setApiError('This channel exists in the database but has not been synchronized with the IoT backend. Please try refreshing the page or contact support if the issue persists.');
+        setApiStats({});
+        return;
+      }
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch channel data: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`API Error (${response.status}): ${errorText || response.statusText}`);
       }
       
       const channelData = await response.json();
       console.log("Channel data for stats:", channelData);
       
-      // Extract field values from the channel data
+      // Extract field values and store in Supabase
       const stats: Record<string, any> = {};
+      const newDataPoints: DataPoint[] = [];
       
       // Process fields from the response
       if (channelData.fields) {
@@ -47,20 +79,62 @@ const ChannelStats: React.FC = () => {
           const fieldNumber = parseInt(fieldKey);
           const field = selectedChannel.fields.find(f => f.fieldNumber === fieldNumber);
           
-          if (field) {
+          if (field && fieldValue.value !== undefined) {
             stats[field.id] = {
               current: fieldValue.value,
-              lastUpdated: fieldValue.last_updated
+              lastUpdated: fieldValue.last_updated || new Date().toISOString()
             };
+            
+            // Create a data point to store in Supabase
+            const timestamp = fieldValue.last_updated || new Date().toISOString();
+            newDataPoints.push({
+              id: `frontend-${selectedChannel.id}-${field.id}-${timestamp}`,
+              channelId: selectedChannel.id,
+              fieldId: field.id,
+              value: fieldValue.value,
+              timestamp
+            });
           }
         });
       }
       
-      console.log("Processed stats:", stats);
+      console.log("Stats from API:", stats);
       setApiStats(stats);
+      
+      // Store the data points in Supabase for persistence
+      if (newDataPoints.length > 0) {
+        try {
+          console.log("Attempting to store data points in Supabase:", newDataPoints);
+          
+          // Convert field names to match DB schema and generate proper UUIDs
+          const formattedPoints = newDataPoints.map(point => ({
+            // Generate a proper UUID for each data point
+            id: uuidv4(),
+            channel_id: point.channelId,
+            field_id: point.fieldId,
+            value: point.value,
+            timestamp: point.timestamp
+          }));
+          
+          const { error } = await supabase
+            .from('datapoints')
+            .insert(formattedPoints);
+          
+          if (error) {
+            console.error('Error storing stats data in Supabase:', error);
+            setSupabaseError(`Failed to store data in Supabase: ${error.message}`);
+          } else {
+            console.log(`Successfully stored ${newDataPoints.length} data points in Supabase`);
+          }
+        } catch (storageError) {
+          console.error('Failed to store stats in Supabase:', storageError);
+          setSupabaseError(`Exception during Supabase storage: ${storageError instanceof Error ? storageError.message : 'Unknown error'}`);
+        }
+      }
     } catch (err) {
       console.error('Error fetching API stats:', err);
       setApiError(`Failed to fetch stats: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setApiStats({});
     } finally {
       setApiStatsLoading(false);
     }
@@ -99,8 +173,10 @@ const ChannelStats: React.FC = () => {
 
   if (!selectedChannel) {
     return (
-      <Card className="h-full flex items-center justify-center bg-beige-50 border-beige-200">
-        <p className="text-coffee-500">Select a channel to view statistics</p>
+      <Card className="bg-beige-50 border-beige-200 h-[300px]">
+        <div className="flex items-center justify-center h-full">
+          <p className="text-coffee-500">Select a channel to view statistics</p>
+        </div>
       </Card>
     );
   }
@@ -108,17 +184,19 @@ const ChannelStats: React.FC = () => {
   // Check if we have fields defined
   if (!selectedChannel.fields || selectedChannel.fields.length === 0) {
     return (
-      <Card className="h-full flex flex-col items-center justify-center bg-beige-50 border-beige-200">
-        <AlertTriangle size={24} className="text-amber-500 mb-2" />
-        <p className="text-coffee-600">No fields defined for this channel</p>
+      <Card className="bg-beige-50 border-beige-200 h-[300px]">
+        <div className="flex flex-col items-center justify-center h-full">
+          <AlertTriangle size={24} className="text-amber-500 mb-2" />
+          <p className="text-coffee-600">No fields defined for this channel</p>
+        </div>
       </Card>
     );
   }
 
   return (
-    <Card className="h-full bg-beige-50 border border-beige-200 overflow-auto">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-medium text-coffee-800">Channel Statistics</h2>
+    <Card className="bg-beige-50 border-beige-200 flex flex-col h-[300px]">
+      <div className="flex justify-between items-center mb-2">
+        <h2 className="text-lg font-medium text-coffee-800 pl-1">Channel Statistics</h2>
         <motion.button
           onClick={fetchApiStats}
           className="p-1.5 rounded-full hover:bg-beige-200 text-coffee-500 hover:text-coffee-700 transition-colors"
@@ -132,10 +210,19 @@ const ChannelStats: React.FC = () => {
       </div>
       
       {apiError && (
-        <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-lg">
-          <div className="flex">
-            <AlertTriangle className="h-5 w-5 text-rose-500 mr-2 flex-shrink-0" />
-            <span>{apiError}</span>
+        <div className="mb-2 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-md">
+          <div className="flex items-start">
+            <AlertTriangle className="h-5 w-5 text-rose-500 mr-2 flex-shrink-0 mt-0.5" />
+            <span className="flex-1 text-sm">{apiError}</span>
+          </div>
+        </div>
+      )}
+      
+      {supabaseError && (
+        <div className="mb-2 bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-md">
+          <div className="flex items-start">
+            <AlertTriangle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0 mt-0.5" />
+            <span className="flex-1 text-sm">{supabaseError}</span>
           </div>
         </div>
       )}
@@ -144,7 +231,7 @@ const ChannelStats: React.FC = () => {
         {isLoading || apiStatsLoading ? (
           <motion.div 
             key="loading"
-            className="h-40 flex items-center justify-center"
+            className="flex-grow flex items-center justify-center"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -155,7 +242,7 @@ const ChannelStats: React.FC = () => {
         ) : dataPoints.length === 0 && Object.keys(apiStats).length === 0 ? (
           <motion.div 
             key="no-data"
-            className="h-40 flex flex-col items-center justify-center text-coffee-500"
+            className="flex-grow flex flex-col items-center justify-center text-coffee-500"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -166,109 +253,92 @@ const ChannelStats: React.FC = () => {
             <p className="text-sm mt-1">Try changing the time range or updating your device</p>
           </motion.div>
         ) : (
-          <motion.div 
-            className="grid grid-cols-1 md:grid-cols-2 gap-4"
-            variants={container}
-            initial="hidden"
-            animate="show"
-            key="stats-grid"
-          >
-            {selectedChannel.fields.map(field => {
-              const stats = calculateFieldStats(dataPoints, field.id);
-              const apiStat = apiStats[field.id];
-              const trend = getTrendValue(field.id);
-              
-              // Use API current value if available, otherwise fall back to calculated stats
-              const currentValue = apiStat?.current !== undefined ? apiStat.current : stats.current;
-              
-              return (
-                <motion.div
-                  key={field.id}
-                  className="border border-beige-200 rounded-lg p-4 bg-gradient-to-r from-beige-50 to-beige-100"
-                  variants={item}
-                  whileHover={{ scale: 1.02, boxShadow: "0 4px 6px -1px rgba(101, 78, 60, 0.1), 0 2px 4px -1px rgba(101, 78, 60, 0.06)" }}
-                  style={{
-                    borderLeftWidth: '4px',
-                    borderLeftColor: field.color || '#c4a389'
-                  }}
-                >
-                  <h3 className="font-medium text-coffee-800 mb-3 flex items-center">
-                    <span
-                      className="inline-block w-3 h-3 rounded-full mr-2"
-                      style={{ backgroundColor: field.color || '#c4a389' }}
-                    ></span>
-                    {field.name || 'Unnamed Field'}
-                  </h3>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-coffee-500">Current</p>
-                      <div className="flex items-end space-x-2">
-                        <p className="text-xl font-semibold text-coffee-800">
-                          {formatValue(currentValue, field.unit)}
-                        </p>
-                        <motion.div 
-                          className={`flex items-center text-xs ${trend.isUp ? 'text-emerald-600' : 'text-rose-600'}`}
-                          initial={{ x: -5, opacity: 0 }}
-                          animate={{ x: 0, opacity: 1 }}
-                          transition={{ delay: 0.3 }}
-                        >
-                          {trend.isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                          <span className="ml-1">{trend.value.toFixed(1)}%</span>
-                        </motion.div>
+          <div className="flex-grow overflow-auto">
+            <motion.div 
+              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pb-1 pr-1"
+              variants={container}
+              initial="hidden"
+              animate="show"
+              key="stats-grid"
+            >
+              {selectedChannel.fields.map(field => {
+                const localStat = localStats[field.id] || { min: null, max: null, avg: null, current: null };
+                const apiStat = apiStats[field.id] || {};
+                const trend = getTrendValue(field.id);
+                
+                // Use API current value if available, otherwise fall back to calculated stats
+                const currentValue = apiStat?.current !== undefined ? apiStat.current : localStat.current;
+                
+                return (
+                  <motion.div
+                    key={field.id}
+                    className="border border-beige-200 rounded-lg p-2 bg-gradient-to-r from-beige-50 to-beige-100"
+                    variants={item}
+                    whileHover={{ scale: 1.01, boxShadow: "0 4px 6px -1px rgba(101, 78, 60, 0.1), 0 2px 4px -1px rgba(101, 78, 60, 0.06)" }}
+                    style={{
+                      borderLeftWidth: '3px',
+                      borderLeftColor: field.color || '#c4a389'
+                    }}
+                  >
+                    <h3 className="font-medium text-coffee-800 mb-1.5 flex items-center text-sm">
+                      <span
+                        className="inline-block w-2 h-2 rounded-full mr-1.5"
+                        style={{ backgroundColor: field.color || '#c4a389' }}
+                      ></span>
+                      <span className="truncate max-w-[150px]">{field.name || 'Unnamed Field'}</span>
+                    </h3>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <p className="text-xs text-coffee-500 mb-0.5">Current</p>
+                        <div className="flex items-end space-x-1">
+                          <p className="text-base font-semibold text-coffee-800 truncate">
+                            {formatValue(currentValue, field.unit)}
+                          </p>
+                          <motion.div 
+                            className={`flex items-center text-xs ${trend.isUp ? 'text-emerald-600' : 'text-rose-600'}`}
+                            initial={{ x: -5, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            transition={{ delay: 0.3 }}
+                          >
+                            {trend.isUp ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                            <span className="ml-0.5">{trend.value.toFixed(1)}%</span>
+                          </motion.div>
+                        </div>
+                        {apiStat?.lastUpdated && (
+                          <p className="text-xs text-coffee-500 truncate text-[10px]">
+                            Updated: {new Date(apiStat.lastUpdated).toLocaleTimeString()}
+                          </p>
+                        )}
                       </div>
-                      {apiStat?.lastUpdated && (
-                        <p className="text-xs text-coffee-500 mt-1">
-                          Updated: {new Date(apiStat.lastUpdated).toLocaleTimeString()}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-sm text-coffee-500">Average</p>
-                      <p className="text-lg font-medium text-coffee-800">
-                        {formatValue(stats.avg, field.unit)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-coffee-500">Min</p>
-                      <div className="flex items-center text-coffee-700">
-                        <p className="text-base">
-                          {formatValue(stats.min, field.unit)}
+                      <div>
+                        <p className="text-xs text-coffee-500 mb-0.5">Average</p>
+                        <p className="text-sm font-medium text-coffee-800 truncate">
+                          {formatValue(localStat.avg, field.unit)}
                         </p>
                       </div>
-                    </div>
-                    <div>
-                      <p className="text-sm text-coffee-500">Max</p>
-                      <div className="flex items-center text-coffee-700">
-                        <p className="text-base">
-                          {formatValue(stats.max, field.unit)}
-                        </p>
+                      <div>
+                        <p className="text-xs text-coffee-500 mb-0.5">Min</p>
+                        <div className="text-coffee-700">
+                          <p className="text-xs truncate">
+                            {formatValue(localStat.min, field.unit)}
+                          </p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-coffee-500 mb-0.5">Max</p>
+                        <div className="text-coffee-700">
+                          <p className="text-xs truncate">
+                            {formatValue(localStat.max, field.unit)}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  
-                  {/* Mini sparkline visualization */}
-                  <div className="mt-3 h-6 flex items-end space-x-0.5">
-                    {[...Array(15)].map((_, i) => {
-                      const height = 30 + Math.sin((i + parseInt(field.id.replace(/\D/g, ''))) * 0.5) * 30;
-                      return (
-                        <motion.div 
-                          key={i} 
-                          className="w-1 rounded-t"
-                          style={{ 
-                            backgroundColor: i === 14 ? field.color || '#c4a389' : `${field.color || '#c4a389'}40`
-                          }}
-                          initial={{ height: 0 }}
-                          animate={{ height: `${height}%` }}
-                          transition={{ duration: 0.4, delay: 0.1 * i }}
-                        ></motion.div>
-                      );
-                    })}
-                  </div>
-                </motion.div>
-              );
-            })}
-          </motion.div>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </Card>

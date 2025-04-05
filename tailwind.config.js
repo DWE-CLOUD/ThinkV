@@ -3,6 +3,9 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      screens: {
+        'xs': '480px',
+      },
       colors: {
         gray: {
           750: '#2d3748', // A shade between gray-700 and gray-800
@@ -75,7 +78,31 @@ export default {
           '100%': { backgroundPosition: '200% 0' },
         },
       },
+      typography: (theme) => ({
+        coffee: {
+          css: {
+            '--tw-prose-body': theme('colors.coffee[700]'),
+            '--tw-prose-headings': theme('colors.coffee[800]'),
+            '--tw-prose-lead': theme('colors.coffee[600]'),
+            '--tw-prose-links': theme('colors.coffee[600]'),
+            '--tw-prose-bold': theme('colors.coffee[800]'),
+            '--tw-prose-counters': theme('colors.coffee[500]'),
+            '--tw-prose-bullets': theme('colors.coffee[500]'),
+            '--tw-prose-hr': theme('colors.beige[200]'),
+            '--tw-prose-quotes': theme('colors.coffee[700]'),
+            '--tw-prose-quote-borders': theme('colors.coffee[300]'),
+            '--tw-prose-captions': theme('colors.coffee[500]'),
+            '--tw-prose-code': theme('colors.coffee[700]'),
+            '--tw-prose-pre-code': theme('colors.beige[100]'),
+            '--tw-prose-pre-bg': theme('colors.coffee[800]'),
+            '--tw-prose-th-borders': theme('colors.beige[300]'),
+            '--tw-prose-td-borders': theme('colors.beige[200]'),
+          },
+        },
+      }),
     },
   },
-  plugins: [],
+  plugins: [
+    require('@tailwindcss/typography'),
+  ],
 };

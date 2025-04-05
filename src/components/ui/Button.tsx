@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
-type ButtonSize = 'sm' | 'md' | 'lg';
+type ButtonSize = 'xs' | 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -36,6 +36,7 @@ const Button: React.FC<ButtonProps> = ({
 
   // Define size styles
   const sizeStyles: Record<ButtonSize, string> = {
+    xs: 'py-1 px-2 text-xs',
     sm: 'py-1.5 px-3 text-sm',
     md: 'py-2 px-4',
     lg: 'py-2.5 px-5 text-lg',
@@ -57,7 +58,7 @@ const Button: React.FC<ButtonProps> = ({
       className={buttonClasses}
       disabled={disabled || isLoading}
       whileTap={{ scale: 0.98 }}
-      whileHover={{ scale: 1.02, boxShadow: "0 10px 15px -3px rgba(101, 78, 60, 0.1), 0 4px 6px -2px rgba(101, 78, 60, 0.05)" }}
+      whileHover={!disabled && !isLoading ? { scale: 1.02, boxShadow: "0 10px 15px -3px rgba(101, 78, 60, 0.1), 0 4px 6px -2px rgba(101, 78, 60, 0.05)" } : {}}
       {...props}
     >
       {isLoading && (

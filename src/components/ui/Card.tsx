@@ -30,11 +30,11 @@ const Card: React.FC<CardProps> = ({
       whileHover={hoverEffect ? { scale: 1.01, y: -3 } : {}}
     >
       {title && (
-        <div className="px-6 py-4 border-b border-beige-200">
+        <div className="px-3 py-3 border-b border-beige-200">
           <h3 className="text-lg font-medium text-coffee-800">{title}</h3>
         </div>
       )}
-      <div className={title ? 'p-6' : 'p-6 h-full'}>{children}</div>
+      <div className={`${title ? 'p-3' : 'p-3'} h-full`}>{children}</div>
     </motion.div>
   );
 };

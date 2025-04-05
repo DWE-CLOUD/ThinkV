@@ -42,16 +42,12 @@ export const isValidUuid = (id: string): boolean => {
 
 // Convert database object to Channel model
 export const dbToChannel = (item: any): Channel => {
-  // Handle fields column specially to account for potential schema differences
   let fields = [];
   try {
     if (item.fields) {
-      // If fields is a string, parse it
       if (typeof item.fields === 'string') {
         fields = JSON.parse(item.fields);
-      } 
-      // If it's already an array or object, use it directly
-      else if (Array.isArray(item.fields) || typeof item.fields === 'object') {
+      } else if (Array.isArray(item.fields) || typeof item.fields === 'object') {
         fields = Array.isArray(item.fields) ? item.fields : [];
       }
     }
@@ -78,7 +74,6 @@ export const dbToChannel = (item: any): Channel => {
 export const channelToDb = (channel: Partial<Channel>): any => {
   const dbObj: any = {};
   
-  // Include ID when provided (this was missing before)
   if (channel.id !== undefined) dbObj.id = channel.id;
   if (channel.name !== undefined) dbObj.name = channel.name;
   if (channel.description !== undefined) dbObj.description = channel.description;
@@ -91,55 +86,22 @@ export const channelToDb = (channel: Partial<Channel>): any => {
   return dbObj;
 };
 
-// Convert database object to DataPoint model
-export const dbToDataPoint = (item: any): DataPoint => {
-  return {
-    id: item.id,
-    channelId: item.channel_id,
-    fieldId: item.field_id,
-    value: item.value,
-    timestamp: item.timestamp
-  };
-};
-
-// Function to regenerate API key for a channel
-export const regenerateApiKey = async (channelId: string): Promise<{ apiKey: string, error?: Error }> => {
-  const newApiKey = generateApiKey();
-  
-  try {
-    // Convert numeric ID to UUID if necessary (for mock data)
-    const dbChannelId = isValidUuid(channelId) ? channelId : uuidv4();
-    
-    const { data, error } = await supabase
-      .from('channels')
-      .update({ api_key: newApiKey, updated_at: new Date().toISOString() })
-      .eq('id', dbChannelId)
-      .select('api_key')
-      .single();
-    
-    if (error) {
-      throw error;
-    }
-    
-    return { apiKey: data?.api_key || newApiKey };
-  } catch (error) {
-    console.error('Error regenerating API key:', error);
-    return { apiKey: newApiKey, error: error as Error };
-  }
-};
-
 // Function to create a channel
 export const createChannel = async (channel: Omit<Channel, 'createdAt' | 'updatedAt'>) => {
-  // Ensure channel has an API key
-  const apiKey = channel.apiKey || generateApiKey();
-  
   try {
+    // Generate API key if not provided
+    const apiKey = channel.apiKey || generateApiKey();
+    
     // Convert to database format
-    const dbChannel = channelToDb(channel);
-    dbChannel.api_key = apiKey;
+    const dbChannel = channelToDb({
+      ...channel,
+      apiKey,
+      id: channel.id || uuidv4() // Use provided ID or generate a new UUID
+    });
     
-    console.log('Creating channel in Supabase with ID:', channel.id);
+    console.log('Creating channel in Supabase:', dbChannel);
     
+    // Direct insert without using RPC to avoid potential issues
     const { data, error } = await supabase
       .from('channels')
       .insert([dbChannel])
@@ -147,19 +109,38 @@ export const createChannel = async (channel: Omit<Channel, 'createdAt' | 'update
       .single();
     
     if (error) {
-      console.error('Error in Supabase channel creation:', error);
+      console.error('Error in direct insert:', error);
       throw error;
     }
     
-    console.log('Channel created in Supabase:', data);
+    console.log('Channel created successfully in Supabase:', data);
     
-    // Convert from DB format to our application format
-    const createdChannel = dbToChannel(data);
-    
-    return { channel: createdChannel, error: null };
+    return { channel: dbToChannel(data), error: null };
   } catch (error) {
     console.error('Error creating channel:', error);
     return { channel: null, error };
+  }
+};
+
+// Function to get user's channels
+export const getUserChannels = async (userId: string) => {
+  try {
+    // Use the direct access function to bypass RLS
+    const { data, error } = await supabase.rpc('get_user_channels_direct', {
+      user_id_param: userId
+    });
+    
+    if (error) {
+      throw error;
+    }
+    
+    // Convert from DB format to our application format
+    const channels: Channel[] = (data || []).map(dbToChannel);
+    
+    return { channels, error: null };
+  } catch (error) {
+    console.error('Error fetching user channels:', error);
+    return { channels: [], error };
   }
 };
 
@@ -186,28 +167,6 @@ export const getChannelById = async (channelId: string) => {
   } catch (error) {
     console.error('Error fetching channel:', error);
     return { channel: null, error };
-  }
-};
-
-// Function to fetch user's channels
-export const getUserChannels = async (userId: string) => {
-  try {
-    const { data, error } = await supabase
-      .from('channels')
-      .select('*')
-      .eq('user_id', userId);
-    
-    if (error) {
-      throw error;
-    }
-    
-    // Convert from DB format to our application format
-    const channels: Channel[] = data.map(dbToChannel);
-    
-    return { channels, error: null };
-  } catch (error) {
-    console.error('Error fetching user channels:', error);
-    return { channels: [], error };
   }
 };
 
@@ -266,55 +225,15 @@ export const deleteChannel = async (channelId: string) => {
   }
 };
 
-// Function to fetch data points for a channel
-export const getDataPoints = async (channelId: string, timeRange?: string) => {
-  try {
-    // For mock data with numeric IDs, we'll fall back to mock data service
-    if (!isValidUuid(channelId)) {
-      console.warn('Using mock data for non-UUID channel ID:', channelId);
-      // Return empty array to allow fallback to mock data
-      return { dataPoints: [], error: new Error('Not a valid UUID') };
-    }
-    
-    let query = supabase
-      .from('datapoints')
-      .select('*')
-      .eq('channel_id', channelId)
-      .order('timestamp', { ascending: true });
-    
-    // Add time range filter if provided
-    if (timeRange) {
-      let hoursBack = 24;
-      
-      switch (timeRange) {
-        case '1h': hoursBack = 1; break;
-        case '6h': hoursBack = 6; break;
-        case '24h': hoursBack = 24; break;
-        case '7d': hoursBack = 24 * 7; break;
-        case '30d': hoursBack = 24 * 30; break;
-        case '90d': hoursBack = 24 * 90; break;
-      }
-      
-      const fromDate = new Date();
-      fromDate.setHours(fromDate.getHours() - hoursBack);
-      
-      query = query.gte('timestamp', fromDate.toISOString());
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) {
-      throw error;
-    }
-    
-    // Convert from DB format to our application format
-    const dataPoints: DataPoint[] = data.map(dbToDataPoint);
-    
-    return { dataPoints, error: null };
-  } catch (error) {
-    console.error('Error fetching data points:', error);
-    return { dataPoints: [], error };
-  }
+// Convert database object to DataPoint model
+export const dbToDataPoint = (item: any): DataPoint => {
+  return {
+    id: item.id,
+    channelId: item.channel_id,
+    fieldId: item.field_id,
+    value: item.value,
+    timestamp: item.timestamp
+  };
 };
 
 // Function to insert a data point
@@ -329,6 +248,7 @@ export const insertDataPoint = async (dataPoint: Omit<DataPoint, 'id'>) => {
     const { data, error } = await supabase
       .from('datapoints')
       .insert([{
+        id: uuidv4(), // Generate a proper UUID
         channel_id: dataPoint.channelId,
         field_id: dataPoint.fieldId,
         value: dataPoint.value,
@@ -370,4 +290,85 @@ export const updateUserProfile = async (userId: string, updates: Partial<User>) 
   }
 };
 
-// Removed the duplicate export at the end of the file
+// Function to regenerate API key
+export const regenerateApiKey = async (channelId: string): Promise<{ apiKey: string, error?: Error }> => {
+  const newApiKey = generateApiKey();
+  
+  try {
+    // Convert numeric ID to UUID if necessary (for mock data)
+    const dbChannelId = isValidUuid(channelId) ? channelId : uuidv4();
+    
+    const { data, error } = await supabase
+      .from('channels')
+      .update({ api_key: newApiKey, updated_at: new Date().toISOString() })
+      .eq('id', dbChannelId)
+      .select('api_key')
+      .single();
+    
+    if (error) {
+      throw error;
+    }
+    
+    return { apiKey: data?.api_key || newApiKey };
+  } catch (error) {
+    console.error('Error regenerating API key:', error);
+    return { apiKey: newApiKey, error: error as Error };
+  }
+};
+
+// Function to get data points for a channel
+export const getDataPoints = async (channelId: string, timeRange?: string) => {
+  try {
+    // For mock data with numeric IDs, we'll fall back to mock data service
+    if (!isValidUuid(channelId)) {
+      console.warn('Using mock data for non-UUID channel ID:', channelId);
+      // Return empty array to allow fallback to mock data
+      return { dataPoints: [], error: new Error('Not a valid UUID') };
+    }
+    
+    // Calculate the from date based on time range
+    let hoursBack = 24;
+    switch (timeRange) {
+      case '1h': hoursBack = 1; break;
+      case '6h': hoursBack = 6; break;
+      case '24h': hoursBack = 24; break;
+      case '7d': hoursBack = 24 * 7; break;
+      case '30d': hoursBack = 24 * 30; break;
+      case '90d': hoursBack = 24 * 90; break;
+    }
+    
+    const fromDate = new Date();
+    fromDate.setHours(fromDate.getHours() - hoursBack);
+    
+    // Use the direct access function to bypass RLS
+    const { data, error } = await supabase.rpc('get_channel_datapoints_direct', {
+      channel_id_param: channelId,
+      from_date_param: fromDate.toISOString()
+    });
+    
+    if (error) {
+      console.error('Error in RPC call to get datapoints:', error);
+      // Fall back to direct query
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('datapoints')
+        .select('*')
+        .eq('channel_id', channelId)
+        .gte('timestamp', fromDate.toISOString())
+        .order('timestamp', { ascending: true });
+      
+      if (fallbackError) {
+        throw fallbackError;
+      }
+      
+      const dataPoints: DataPoint[] = fallbackData.map(dbToDataPoint);
+      return { dataPoints, error: null };
+    }
+    
+    // Convert from DB format to our application format
+    const dataPoints: DataPoint[] = (data || []).map(dbToDataPoint);
+    return { dataPoints, error: null };
+  } catch (error) {
+    console.error('Error fetching data points:', error);
+    return { dataPoints: [], error };
+  }
+};
